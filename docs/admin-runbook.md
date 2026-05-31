@@ -326,6 +326,31 @@ python scripts/pr_queue_health.py --input queue.json --format json --fail-on-iss
 maintainers add the check to local release or payout workflows without requiring
 live GitHub access.
 
+### Proposed Work Intake
+
+Use the proposed-work queue report when contributor-created issues may have lost
+the `proposed-work` label because they were created through the GitHub CLI, API,
+or an account without label permissions:
+
+```bash
+python scripts/proposed_work_queue.py --repo ramimbo/mergework --format markdown
+```
+
+The report is read-only. It treats an issue as proposed-work intake when it
+either has the `proposed-work` label or has both a `Proposed work:` title and the
+expected template body sections. This keeps CLI/API submissions visible without
+granting contributors label mutation permissions.
+
+For offline checks, save fixture data and run:
+
+```bash
+python scripts/proposed_work_queue.py --input proposed-work.json --format json --fail-on-unlabeled
+```
+
+`--fail-on-unlabeled` exits nonzero only when valid proposed-work fallback issues
+are missing the label, which lets maintainers spot intake that needs manual
+triage while avoiding arbitrary vague idea issues.
+
 ### Final Checks
 
 1. Confirm the webhook or admin API records one ledger payment for that award.

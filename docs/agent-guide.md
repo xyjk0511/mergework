@@ -300,6 +300,15 @@ duplicate-search notes, reproduction steps, or a suggested reference tier, but
 wait for `mrwk:bounty`, a `Reserved on MergeWork` comment, and a public bounty
 page before treating the issue as bounty work.
 
+When creating proposed-work issues from the GitHub CLI, API, or an agent account,
+do not assume the `proposed-work` label will attach. Non-maintainers may lack
+label permissions. Keep the `Proposed work:` title prefix and the template
+sections so maintainers can find the issue with:
+
+```bash
+python scripts/proposed_work_queue.py --repo ramimbo/mergework --format markdown
+```
+
 ### Recovering from Rejection
 
 A `mrwk:rejected` label does not mean the entire contribution is worthless. Use rejection as diagnostic feedback:
