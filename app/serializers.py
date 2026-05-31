@@ -10,6 +10,7 @@ from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 from sqlalchemy.sql.elements import ColumnElement
 
+from app.bounty_attempts import bounty_attempt_summaries_by_bounty_id, bounty_attempt_summary
 from app.ledger.reconciliation import AcceptedPayoutCheck
 from app.ledger.service import format_mrwk, get_balance
 from app.models import Bounty, LedgerEntry, Proof, TreasuryProposal, Wallet, WalletTransfer
@@ -21,6 +22,7 @@ def bounty_to_dict(
     bounty: Bounty,
     session: Session | None = None,
     pending_proposals: PendingBountyProposals | None = None,
+    active_attempt_summary: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Serialize a bounty row for public API and page consumers."""
     awards_remaining = max(0, bounty.max_awards - bounty.awards_paid)
@@ -44,6 +46,16 @@ def bounty_to_dict(
         pending_payouts=pending_payouts,
         pending_close=pending_close,
     )
+    if active_attempt_summary is None:
+        active_attempt_summary = (
+            bounty_attempt_summary(session, bounty)
+            if session is not None
+            else {
+                "active_attempt_count": 0,
+                "active_attempt_warnings": [],
+                "attempt_endpoint": f"/api/v1/bounties/{bounty.id}/attempts",
+            }
+        )
     return {
         "id": bounty.id,
         "repo": bounty.repo,
@@ -69,6 +81,9 @@ def bounty_to_dict(
             pending_payouts=pending_payouts,
             pending_close=pending_close,
         ),
+        "active_attempt_count": active_attempt_summary["active_attempt_count"],
+        "active_attempt_warnings": active_attempt_summary["active_attempt_warnings"],
+        "attempt_endpoint": active_attempt_summary["attempt_endpoint"],
         "status": bounty.status,
         "acceptance": bounty.acceptance,
         "created_at": bounty.created_at.isoformat(),
@@ -83,10 +98,12 @@ def bounties_to_dict(
         return [bounty_to_dict(bounty) for bounty in bounties]
 
     pending_by_bounty = _pending_bounty_proposals_by_bounty_id(session)
+    attempt_summary_by_bounty = bounty_attempt_summaries_by_bounty_id(session, bounties)
     return [
         bounty_to_dict(
             bounty,
             pending_proposals=pending_by_bounty.get(bounty.id, ([], None)),
+            active_attempt_summary=attempt_summary_by_bounty[bounty.id],
         )
         for bounty in bounties
     ]

@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+from datetime import UTC, datetime, timedelta
+
 from fastapi.testclient import TestClient
 
 from app.db import create_schema, session_scope
 from app.ledger.service import close_bounty, create_bounty, ensure_genesis, pay_bounty
 from app.main import create_app
+from app.models import BountyAttempt
 from app.treasury import propose_treasury_action
 
 
@@ -38,6 +41,96 @@ def test_bounty_api_reports_multi_award_capacity(sqlite_url: str) -> None:
     assert bounty["pending_payout_awards"] == 0
     assert bounty["pending_close_proposal"] is None
     assert bounty["availability_state"] == "open"
+    assert bounty["active_attempt_count"] == 0
+    assert bounty["active_attempt_warnings"] == []
+    assert bounty["attempt_endpoint"] == f"/api/v1/bounties/{bounty['id']}/attempts"
+
+
+def test_bounty_api_reports_active_attempt_summary(sqlite_url: str) -> None:
+    create_schema(sqlite_url)
+    now = datetime.now(UTC)
+    with session_scope(sqlite_url) as session:
+        ensure_genesis(session)
+        bounty = create_bounty(
+            session,
+            repo="ramimbo/mergework",
+            issue_number=14,
+            issue_url="https://github.com/ramimbo/mergework/issues/14",
+            title="Attempt summary",
+            reward_mrwk="20",
+            max_awards=2,
+            acceptance="Bounty rows should warn when active attempts overlap.",
+        )
+        other_bounty = create_bounty(
+            session,
+            repo="ramimbo/mergework",
+            issue_number=15,
+            issue_url="https://github.com/ramimbo/mergework/issues/15",
+            title="Other attempt summary",
+            reward_mrwk="10",
+            max_awards=1,
+            acceptance="Other rows keep separate attempt counts.",
+        )
+        bounty_id = bounty.id
+        other_bounty_id = other_bounty.id
+        session.add_all(
+            [
+                BountyAttempt(
+                    bounty_id=bounty_id,
+                    submitter_account="github:alice",
+                    source_url="https://github.com/ramimbo/mergework/pull/14",
+                    status="active",
+                    expires_at=now + timedelta(hours=1),
+                    created_at=now,
+                    updated_at=now,
+                ),
+                BountyAttempt(
+                    bounty_id=bounty_id,
+                    submitter_account="github:bob",
+                    status="active",
+                    expires_at=now + timedelta(hours=1),
+                    created_at=now,
+                    updated_at=now,
+                ),
+                BountyAttempt(
+                    bounty_id=bounty_id,
+                    submitter_account="github:expired",
+                    status="active",
+                    expires_at=now - timedelta(minutes=1),
+                    created_at=now,
+                    updated_at=now,
+                ),
+                BountyAttempt(
+                    bounty_id=bounty_id,
+                    submitter_account="github:released",
+                    status="released",
+                    expires_at=now + timedelta(hours=1),
+                    created_at=now,
+                    updated_at=now,
+                ),
+                BountyAttempt(
+                    bounty_id=other_bounty_id,
+                    submitter_account="github:carol",
+                    status="active",
+                    expires_at=now + timedelta(hours=1),
+                    created_at=now,
+                    updated_at=now,
+                ),
+            ]
+        )
+
+    client = TestClient(create_app(database_url=sqlite_url, webhook_secret="secret"))
+
+    detail = client.get(f"/api/v1/bounties/{bounty_id}").json()
+    rows = {row["id"]: row for row in client.get("/api/v1/bounties").json()}
+
+    assert detail["active_attempt_count"] == 2
+    assert detail["active_attempt_warnings"] == ["bounty has 2 active attempts"]
+    assert detail["attempt_endpoint"] == f"/api/v1/bounties/{bounty_id}/attempts"
+    assert rows[bounty_id]["active_attempt_count"] == 2
+    assert rows[bounty_id]["active_attempt_warnings"] == ["bounty has 2 active attempts"]
+    assert rows[other_bounty_id]["active_attempt_count"] == 1
+    assert rows[other_bounty_id]["active_attempt_warnings"] == ["bounty has 1 active attempt"]
 
 
 def test_bounty_api_reports_pending_payout_effective_capacity(sqlite_url: str) -> None:

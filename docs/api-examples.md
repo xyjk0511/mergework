@@ -146,6 +146,22 @@ List active attempts for a bounty:
 curl -s "$API_HOST/api/v1/bounties/<bounty_id>/attempts"
 ```
 
+The bounty list and detail responses also expose a bounded attempt summary so
+scanners can notice overlap before making a second request:
+
+```json
+{
+  "id": 65,
+  "issue_number": 404,
+  "active_attempt_count": 2,
+  "active_attempt_warnings": ["bounty has 2 active attempts"],
+  "attempt_endpoint": "/api/v1/bounties/65/attempts"
+}
+```
+
+Use `attempt_endpoint` for the full active reservation rows when the summary
+reports overlap. Expired and released attempts are not counted in the summary.
+
 The list response returns the bounty id, advisory warnings, and active attempt reservations:
 
 ```json
