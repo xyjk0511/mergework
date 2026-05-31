@@ -55,13 +55,31 @@ def _bounty_refs(text: str) -> list[int]:
 def _bounty_is_payable(raw: dict[str, Any]) -> bool:
     if str(raw.get("state") or "").lower() not in {"", "open"}:
         return False
-    remaining = raw.get("awards_remaining", raw.get("awardsRemaining"))
+    remaining = raw.get("effective_awards_remaining", raw.get("effectiveAwardsRemaining"))
+    if remaining is None:
+        remaining = raw.get("awards_remaining", raw.get("awardsRemaining"))
     if remaining is None:
         return True
     try:
         return int(remaining) > 0
     except (TypeError, ValueError):
         return False
+
+
+def _bounty_availability_note(raw: dict[str, Any]) -> str | None:
+    note = raw.get("availability_note", raw.get("availabilityNote"))
+    return note if isinstance(note, str) and note else None
+
+
+def _bounty_has_partial_effective_availability(raw: dict[str, Any]) -> bool:
+    pending_awards = raw.get("pending_payout_awards", raw.get("pendingPayoutAwards"))
+    try:
+        if pending_awards is not None and int(pending_awards) > 0:
+            return True
+    except (TypeError, ValueError):
+        pass
+    availability_state = str(raw.get("availability_state", raw.get("availabilityState")) or "")
+    return "pending" in availability_state and "partial" in availability_state
 
 
 def _bounty_payability_verified(raw: dict[str, Any]) -> bool:
@@ -272,11 +290,15 @@ def evaluate_submission(data: dict[str, Any]) -> dict[str, Any]:
                 )
             )
         elif not _bounty_is_payable(bounty):
+            availability_note = _bounty_availability_note(bounty)
+            message = f"referenced bounty #{bounty_ref} is closed or exhausted"
+            if availability_note:
+                message = f"{message}: {availability_note}"
             checks.append(
                 _check(
                     "bounty_payable",
                     "fail",
-                    f"referenced bounty #{bounty_ref} is closed or exhausted",
+                    message,
                 )
             )
         elif not _bounty_payability_verified(bounty):
@@ -291,6 +313,12 @@ def evaluate_submission(data: dict[str, Any]) -> dict[str, Any]:
             checks.append(
                 _check("bounty_payable", "pass", f"referenced bounty #{bounty_ref} is open")
             )
+            if _bounty_has_partial_effective_availability(bounty):
+                availability_note = _bounty_availability_note(bounty)
+                message = f"referenced bounty #{bounty_ref} has reduced effective availability"
+                if availability_note:
+                    message = f"{message}: {availability_note}"
+                checks.append(_check("bounty_availability", "warn", message))
         if bounty is not None:
             activity_check = _maintainer_activity_check(bounty_ref, bounty, now)
             if activity_check is not None:
@@ -444,6 +472,11 @@ def _load_api_bounties(repo: str, api_host: str) -> dict[int, dict[str, Any]]:
             "number": issue_number,
             "state": item.get("status", "open"),
             "awards_remaining": item.get("awards_remaining"),
+            "effective_awards_remaining": item.get("effective_awards_remaining"),
+            "effective_available_mrwk": item.get("effective_available_mrwk"),
+            "availability_state": item.get("availability_state"),
+            "availability_note": item.get("availability_note"),
+            "pending_payout_awards": item.get("pending_payout_awards"),
         }
     return bounties
 
@@ -541,6 +574,7 @@ def _load_live_context(
             continue
         api_bounty = api_bounties.get(issue["number"], {})
         awards_remaining = api_bounty.get("awards_remaining")
+        effective_awards_remaining = api_bounty.get("effective_awards_remaining")
         bounties.append(
             {
                 "id": api_bounty.get("id"),
@@ -548,8 +582,13 @@ def _load_live_context(
                 "title": issue.get("title"),
                 "state": issue.get("state"),
                 "awards_remaining": awards_remaining,
+                "effective_awards_remaining": effective_awards_remaining,
+                "effective_available_mrwk": api_bounty.get("effective_available_mrwk"),
+                "availability_state": api_bounty.get("availability_state"),
+                "availability_note": api_bounty.get("availability_note"),
+                "pending_payout_awards": api_bounty.get("pending_payout_awards"),
                 "payability_verified": issue["number"] in api_bounties
-                and awards_remaining is not None,
+                and (effective_awards_remaining is not None or awards_remaining is not None),
             }
         )
         if issue["number"] in referenced_bounties:

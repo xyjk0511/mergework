@@ -760,6 +760,162 @@ def test_submission_quality_gate_live_bounties_use_api_award_capacity(monkeypatc
     } in result["checks"]
 
 
+def test_submission_quality_gate_uses_effective_awards_before_raw_capacity() -> None:
+    result = evaluate_submission(
+        {
+            "submission_text": "Summary: work\n\nRefs #319\n\nValidation: pytest passed",
+            "bounties": [
+                {
+                    "number": 319,
+                    "state": "OPEN",
+                    "awards_remaining": 4,
+                    "effective_awards_remaining": 0,
+                    "availability_note": (
+                        "4 awards covered by pending payout proposals; "
+                        "0 awards effectively available."
+                    ),
+                }
+            ],
+            "pull_requests": [],
+        }
+    )
+
+    assert result["status"] == "fail"
+    assert {
+        "name": "bounty_payable",
+        "status": "fail",
+        "message": (
+            "referenced bounty #319 is closed or exhausted: "
+            "4 awards covered by pending payout proposals; 0 awards effectively available."
+        ),
+    } in result["checks"]
+
+
+def test_submission_quality_gate_warns_on_partial_effective_availability() -> None:
+    result = evaluate_submission(
+        {
+            "submission_text": "Summary: work\n\nRefs #319\n\nValidation: pytest passed",
+            "bounties": [
+                {
+                    "number": 319,
+                    "state": "OPEN",
+                    "awards_remaining": 30,
+                    "effective_awards_remaining": 15,
+                    "availability_state": "pending_payouts_partial",
+                    "availability_note": (
+                        "15 awards covered by pending payout proposals; "
+                        "15 awards effectively available."
+                    ),
+                    "pending_payout_awards": 15,
+                }
+            ],
+            "pull_requests": [],
+        }
+    )
+
+    assert result["status"] == "warn"
+    assert {
+        "name": "bounty_payable",
+        "status": "pass",
+        "message": "referenced bounty #319 is open",
+    } in result["checks"]
+    assert {
+        "name": "bounty_availability",
+        "status": "warn",
+        "message": (
+            "referenced bounty #319 has reduced effective availability: "
+            "15 awards covered by pending payout proposals; 15 awards effectively available."
+        ),
+    } in result["checks"]
+
+
+def test_submission_quality_gate_keeps_legacy_awards_remaining_behavior() -> None:
+    result = evaluate_submission(
+        {
+            "submission_text": "Summary: work\n\nRefs #319\n\nValidation: pytest passed",
+            "bounties": [{"number": 319, "state": "OPEN", "awards_remaining": 1}],
+            "pull_requests": [],
+        }
+    )
+
+    assert result["status"] == "pass"
+    assert {
+        "name": "bounty_payable",
+        "status": "pass",
+        "message": "referenced bounty #319 is open",
+    } in result["checks"]
+
+
+def test_submission_quality_gate_live_context_preserves_effective_availability(
+    monkeypatch,
+) -> None:
+    def fake_run(args, **kwargs):
+        if args[:3] == ["gh", "pr", "list"]:
+            return subprocess.CompletedProcess(args=args, returncode=0, stdout="[]", stderr="")
+        if args[:3] == ["gh", "issue", "list"]:
+            return subprocess.CompletedProcess(
+                args=args,
+                returncode=0,
+                stdout=json.dumps([{"number": 319, "title": "MRWK bounty: gate", "state": "OPEN"}]),
+                stderr="",
+            )
+        if args[:3] == ["gh", "issue", "view"]:
+            return subprocess.CompletedProcess(
+                args=args,
+                returncode=0,
+                stdout=json.dumps({"createdAt": "2026-05-20T00:00:00Z", "comments": []}),
+                stderr="",
+            )
+        raise AssertionError(args)
+
+    monkeypatch.setattr(submission_quality_gate.subprocess, "run", fake_run)
+    monkeypatch.setattr(
+        submission_quality_gate,
+        "_load_api_bounties",
+        lambda repo, api_host: {
+            319: {
+                "id": 66,
+                "number": 319,
+                "state": "OPEN",
+                "awards_remaining": 30,
+                "effective_awards_remaining": 15,
+                "effective_available_mrwk": "600",
+                "availability_state": "pending_payouts_partial",
+                "availability_note": "15 awards effectively available.",
+                "pending_payout_awards": 15,
+            }
+        },
+    )
+    monkeypatch.setattr(
+        submission_quality_gate, "_load_api_attempts", lambda api_host, bounty_id: []
+    )
+
+    data = submission_quality_gate._load_live_context(
+        "ramimbo/mergework",
+        "Summary: work\n\nRefs #319\n\nValidation: pytest passed",
+        "https://api.example.test",
+    )
+
+    bounty = data["bounties"][0]
+    assert bounty["awards_remaining"] == 30
+    assert bounty["effective_awards_remaining"] == 15
+    assert bounty["effective_available_mrwk"] == "600"
+    assert bounty["availability_state"] == "pending_payouts_partial"
+    assert bounty["availability_note"] == "15 awards effectively available."
+    assert bounty["pending_payout_awards"] == 15
+
+    result = evaluate_submission(data)
+    assert result["status"] == "warn"
+    assert {
+        "name": "bounty_availability",
+        "status": "warn",
+        "message": (
+            "referenced bounty #319 has reduced effective availability: "
+            "15 awards effectively available."
+        ),
+    } in result["checks"]
+
+
 def test_submission_quality_gate_live_context_warns_when_attempt_id_missing(
     monkeypatch,
 ) -> None:
