@@ -1,0 +1,139 @@
+{% extends "base.html" %}
+{% block title %}MRWK Bounty #{{ bounty.id }}{% endblock %}
+{% block content %}
+<nav class="back-nav" aria-label="Bounty navigation">
+  <a href="/bounties">&larr; Back to bounties</a>
+</nav>
+<section class="detail">
+  <p class="eyebrow">Bounty #{{ bounty.id }}</p>
+  <h1>{{ bounty.title }}</h1>
+  <p class="lead">Review the reward, status, source issue, and acceptance criteria before starting.</p>
+
+  {% set issue_url = safe_public_url(bounty.issue_url) %}
+  <div class="bounty-summary" aria-label="Bounty summary">
+    <article>
+      <span>Status</span>
+      <strong class="status-pill status-{{ bounty.status }}">{{ bounty.status }}</strong>
+    </article>
+    <article>
+      <span>Reward per award</span>
+      <strong>{{ bounty.reward_mrwk }} MRWK</strong>
+    </article>
+    <article>
+      <span>Awards</span>
+      <strong>{{ bounty.awards_paid }}/{{ bounty.max_awards }} paid</strong>
+    </article>
+    <article>
+      <span>Remaining</span>
+      <strong>{{ bounty.awards_remaining }}</strong>
+    </article>
+    <article>
+      <span>Available</span>
+      <strong>{{ bounty.available_mrwk }} MRWK</strong>
+    </article>
+    <article>
+      <span>Effective remaining</span>
+      <strong>{{ bounty.effective_awards_remaining }}</strong>
+    </article>
+    <article>
+      <span>Effective available</span>
+      <strong>{{ bounty.effective_available_mrwk }} MRWK</strong>
+    </article>
+    <article>
+      <span>Issue</span>
+      <strong>
+        {% if issue_url %}
+          <a href="{{ issue_url }}" rel="nofollow noopener">{{ bounty.repo }} #{{ bounty.issue_number }}</a>
+        {% else %}
+          {{ bounty.repo }} #{{ bounty.issue_number }}
+        {% endif %}
+      </strong>
+    </article>
+  </div>
+  {% if bounty.availability_state != "open" or bounty.effective_awards_remaining != bounty.awards_remaining %}
+  <p class="notice">
+    {{ bounty.availability_note }}
+    {% if bounty.effective_awards_remaining != bounty.awards_remaining %}
+    Visible capacity before pending proposals: {{ bounty.awards_remaining }} award{% if bounty.awards_remaining != 1 %}s{% endif %}, {{ bounty.available_mrwk }} MRWK.
+    {% endif %}
+  </p>
+  {% endif %}
+
+  <section class="acceptance-card" aria-labelledby="acceptance-heading">
+    <p class="eyebrow">Acceptance</p>
+    <h2 id="acceptance-heading">What has to be true</h2>
+    <p>{{ bounty.acceptance }}</p>
+  </section>
+
+  <section class="next-steps-card" aria-labelledby="bounty-next-steps-heading">
+    <p class="eyebrow">Contributor next steps</p>
+    <h2 id="bounty-next-steps-heading">Before you start</h2>
+    <ol>
+      <li>Confirm the source issue is still open and your change is not already covered by another PR.</li>
+      <li>Keep the PR focused, link the source issue as <strong>Bounty #{{ bounty.issue_number }}</strong>, and include test or smoke-check evidence.</li>
+      <li>
+        {% if bounty.effective_awards_remaining %}
+          {% if bounty.effective_awards_remaining == bounty.awards_remaining %}
+          {{ bounty.effective_awards_remaining }} award{% if bounty.effective_awards_remaining != 1 %}s{% endif %} still open for distinct accepted work.
+          {% else %}
+          {{ bounty.effective_awards_remaining }} award{% if bounty.effective_awards_remaining != 1 %}s{% endif %} still open for distinct accepted work after pending treasury proposals.
+          {% endif %}
+        {% elif bounty.effective_awards_remaining == bounty.awards_remaining %}
+          No awards remain; treat new work as unpaid unless maintainers reopen the bounty.
+        {% else %}
+          No awards remain after pending treasury proposals; treat new work as unpaid unless maintainers reopen or free capacity.
+        {% endif %}
+      </li>
+    </ol>
+    <div class="next-steps-actions" aria-label="Bounty action links">
+      {% if issue_url %}<a href="{{ issue_url }}" rel="nofollow noopener">Open source issue</a>{% endif %}
+      <a href="/api/v1/bounties/{{ bounty.id }}">View JSON details</a>
+    </div>
+  </section>
+</section>
+
+<section>
+  <div class="section-head">
+    <h2>Accepted work</h2>
+    <p>{{ bounty.awards_paid }}/{{ bounty.max_awards }} awards paid{% if bounty.effective_awards_remaining %}; {{ bounty.effective_awards_remaining }} still open{% elif bounty.awards_remaining %}; {{ bounty.awards_remaining }} visibly open before pending proposals{% endif %}.</p>
+  </div>
+  {% if bounty.accepted_awards %}
+  <div class="ledger-list">
+    {% for award in bounty.accepted_awards %}
+    <article class="ledger-row ledger-row--bounty-payment">
+      <div class="ledger-entry-card">
+        <div class="ledger-card-head">
+          <div class="ledger-card-title">
+            <a class="ledger-entry-link" href="{{ award.ledger_url }}">#{{ award.ledger_sequence }}</a>
+            <span class="ledger-type ledger-type--bounty-payment">Accepted</span>
+          </div>
+          <strong class="ledger-amount">{{ award.amount_mrwk }} MRWK</strong>
+        </div>
+        <dl class="ledger-card-grid">
+          <div class="ledger-field ledger-field--to">
+            <dt>Paid to</dt>
+            <dd>{% if award.account %}<a href="/accounts/{{ award.account }}">{{ award.account }}</a>{% else %}-{% endif %}</dd>
+          </div>
+          <div class="ledger-field ledger-field--reference reference-cell">
+            <dt>Submission</dt>
+            {% set submission_url = safe_public_url(award.submission_url) %}
+            <dd>{% if submission_url %}<a href="{{ submission_url }}" rel="nofollow noopener">{{ award.submission_url | replace("https://github.com/", "") }}</a>{% elif award.submission_url %}<code>{{ award.submission_url }}</code>{% else %}-{% endif %}</dd>
+          </div>
+          <div class="ledger-field ledger-field--proof">
+            <dt>Proof</dt>
+            <dd><a href="{{ award.proof_url }}">{{ award.proof_hash[:12] }}</a></dd>
+          </div>
+          <div class="ledger-field">
+            <dt>Accepted by</dt>
+            <dd>{{ award.accepted_by or "-" }}</dd>
+          </div>
+        </dl>
+      </div>
+    </article>
+    {% endfor %}
+  </div>
+  {% else %}
+  <p>No accepted work has been paid for this bounty yet.</p>
+  {% endif %}
+</section>
+{% endblock %}

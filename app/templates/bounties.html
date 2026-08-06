@@ -1,0 +1,96 @@
+{% extends "base.html" %}
+{% block title %}MRWK Bounties{% endblock %}
+{% block content %}
+<h1>Bounties</h1>
+<form method="get" action="/bounties" aria-label="Search bounties">
+  {% if selected_status %}<input type="hidden" name="status" value="{{ selected_status }}">{% endif %}
+  <label for="bounty-search">Search bounties</label>
+  <input id="bounty-search" name="q" type="search" value="{{ query_text }}" placeholder="repo, title, issue number, or acceptance text">
+  <label for="bounty-sort">Sort</label>
+  <select id="bounty-sort" name="sort">
+    {% for sort_value, sort_label in sort_options.items() %}
+    <option value="{{ sort_value }}"{% if selected_sort == sort_value %} selected{% endif %}>{{ sort_label }}</option>
+    {% endfor %}
+  </select>
+  <label for="bounty-limit">Rows</label>
+  <select id="bounty-limit" name="limit">
+    <option value=""{% if not selected_limit %} selected{% endif %}>All</option>
+    {% for limit_option in limit_options %}
+    <option value="{{ limit_option }}"{% if selected_limit == limit_option %} selected{% endif %}>{{ limit_option }}</option>
+    {% endfor %}
+  </select>
+  <label for="bounty-availability">Availability</label>
+  <select id="bounty-availability" name="availability">
+    <option value="all"{% if selected_availability == "all" %} selected{% endif %}>All visible rows</option>
+    <option value="effectively_open"{% if selected_availability == "effectively_open" %} selected{% endif %}>Effectively open</option>
+  </select>
+  <button type="submit">Search</button>
+  {% if query_text %}<a href="/bounties{% if selected_status or selected_sort != "newest" or selected_limit or selected_availability != "all" %}?{% if selected_status %}status={{ selected_status }}{% endif %}{% if selected_status and (selected_sort != "newest" or selected_limit or selected_availability != "all") %}&{% endif %}{% if selected_sort != "newest" %}sort={{ selected_sort }}{% endif %}{% if selected_sort != "newest" and (selected_limit or selected_availability != "all") %}&{% endif %}{% if selected_limit %}limit={{ selected_limit }}{% endif %}{% if selected_limit and selected_availability != "all" %}&{% endif %}{% if selected_availability != "all" %}availability={{ selected_availability }}{% endif %}{% endif %}">Clear search</a>{% endif %}
+</form>
+<nav aria-label="Bounty status filters">
+  <a href="/bounties{% if query_text or selected_sort != "newest" or selected_limit or selected_availability != "all" %}?{% if query_text %}q={{ query_text | urlencode }}{% endif %}{% if query_text and (selected_sort != "newest" or selected_limit or selected_availability != "all") %}&{% endif %}{% if selected_sort != "newest" %}sort={{ selected_sort }}{% endif %}{% if selected_sort != "newest" and (selected_limit or selected_availability != "all") %}&{% endif %}{% if selected_limit %}limit={{ selected_limit }}{% endif %}{% if selected_limit and selected_availability != "all" %}&{% endif %}{% if selected_availability != "all" %}availability={{ selected_availability }}{% endif %}{% endif %}"{% if not selected_status %} aria-current="page"{% endif %}>All</a>
+  <a href="/bounties?status=open{% if query_text %}&q={{ query_text | urlencode }}{% endif %}{% if selected_sort != "newest" %}&sort={{ selected_sort }}{% endif %}{% if selected_limit %}&limit={{ selected_limit }}{% endif %}{% if selected_availability != "all" %}&availability={{ selected_availability }}{% endif %}"{% if selected_status == "open" %} aria-current="page"{% endif %}>Open</a>
+  <a href="/bounties?status=paid{% if query_text %}&q={{ query_text | urlencode }}{% endif %}{% if selected_sort != "newest" %}&sort={{ selected_sort }}{% endif %}{% if selected_limit %}&limit={{ selected_limit }}{% endif %}{% if selected_availability != "all" %}&availability={{ selected_availability }}{% endif %}"{% if selected_status == "paid" %} aria-current="page"{% endif %}>Paid</a>
+  <a href="/bounties?status=closed{% if query_text %}&q={{ query_text | urlencode }}{% endif %}{% if selected_sort != "newest" %}&sort={{ selected_sort }}{% endif %}{% if selected_limit %}&limit={{ selected_limit }}{% endif %}{% if selected_availability != "all" %}&availability={{ selected_availability }}{% endif %}"{% if selected_status == "closed" %} aria-current="page"{% endif %}>Closed</a>
+</nav>
+{% if query_text %}<p>Showing matches for “{{ query_text }}”.</p>{% endif %}
+<section class="bounty-list-summary" aria-label="Bounty list summary">
+  <article>
+    <span>Bounties shown</span>
+    <strong>{{ summary.bounties_shown }}</strong>
+  </article>
+  <article>
+    <span>Awards open</span>
+    <strong>{{ summary.open_awards }}</strong>
+  </article>
+  <article>
+    <span>Open reward pool</span>
+    <strong>{{ summary.open_pool_mrwk }} MRWK</strong>
+  </article>
+  <article>
+    <span>Effectively open</span>
+    <strong>{{ summary.effective_open_awards }}</strong>
+  </article>
+  <article>
+    <span>Effectively available</span>
+    <strong>{{ summary.effective_open_pool_mrwk }} MRWK</strong>
+  </article>
+</section>
+<p class="notice">
+  <a href="{{ api_results_url }}">View JSON results</a>
+</p>
+<div class="list">
+  {% for bounty in bounties %}
+  <article class="bounty-card bounty-card--{{ bounty.status }}">
+    <div class="bounty-card-head">
+      <h2><a href="/bounties/{{ bounty.id }}">{{ bounty.title }}</a></h2>
+      <span class="status-pill status-{{ bounty.status }}">{{ bounty.status }}</span>
+    </div>
+    <p class="bounty-card-meta">
+      {% set issue_url = safe_public_url(bounty.issue_url) %}
+      {% if issue_url %}
+      <a href="{{ issue_url }}" rel="nofollow noopener">{{ bounty.repo }} #{{ bounty.issue_number }}</a> ·
+      {% else %}
+      {{ bounty.repo }} #{{ bounty.issue_number }} ·
+      {% endif %}
+      <strong>{{ bounty.reward_mrwk }} MRWK</strong> per award ·
+      {{ bounty.available_mrwk }} MRWK still available before pending proposals ·
+      {{ bounty.awards_remaining }}/{{ bounty.max_awards }} awards visibly open ·
+      {{ bounty.effective_available_mrwk }} MRWK effectively available ·
+      {{ bounty.effective_awards_remaining }}/{{ bounty.max_awards }} awards effectively open
+    </p>
+    {% if bounty.availability_state != "open" or bounty.effective_awards_remaining != bounty.awards_remaining %}
+    <p class="notice">{{ bounty.availability_note }}</p>
+    {% endif %}
+    <p>{{ bounty.acceptance }}</p>
+  </article>
+  {% else %}
+  {% if query_text or selected_status or selected_availability != "all" %}
+  <p>No bounties match these filters.</p>
+  <p><a href="/bounties">Clear filters</a></p>
+  {% else %}
+  <p>No bounties yet.</p>
+  {% endif %}
+  {% endfor %}
+</div>
+{% endblock %}
